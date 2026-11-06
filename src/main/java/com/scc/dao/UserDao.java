@@ -6,11 +6,13 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 public class UserDao {
+    private final ActivityLogDao logDao = new ActivityLogDao();
 
     public boolean usernameExists(String username) {
         String sql = "SELECT 1 FROM users WHERE username = ?";
@@ -28,15 +30,21 @@ public class UserDao {
 
     public boolean registerUser(String username, String password, String role) {
         String sql = "INSERT INTO users(username, password, roles, status) VALUES(?, ?, ?, 'PENDING')";
+        int newUserId = -1;
 
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             pstmt.setString(1, username);
             pstmt.setString(2, password);
             pstmt.setString(3, role.toUpperCase());
             pstmt.executeUpdate();
-            return true;
+
+            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    newUserId = generatedKeys.getInt(1);
+                }
+            }
         } catch (SQLException e) {
             if (e.getMessage() != null && e.getMessage().contains("UNIQUE")) {
                 System.out.println("Username already exists. Choose another one.");
@@ -45,20 +53,31 @@ public class UserDao {
             }
             return false;
         }
+
+        if (newUserId != -1) {
+            logDao.logAction(newUserId, "USER_REGISTERED", "User " + username + " registered successfully.");
+        }
+        return true;
     }
 
-    public boolean adminAddUser(String username, String password, String role, String status) {
+    public boolean adminAddUser(String username, String password, String role, String status, int adminId) {
         String sql = "INSERT INTO users(username, password, roles, status) VALUES(?, ?, ?, ?)";
+        int newUserId = -1;
 
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             pstmt.setString(1, username);
             pstmt.setString(2, password);
             pstmt.setString(3, role.toUpperCase());
             pstmt.setString(4, status.toUpperCase());
             pstmt.executeUpdate();
-            return true;
+
+            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    newUserId = generatedKeys.getInt(1);
+                }
+            }
         } catch (SQLException e) {
             if (e.getMessage() != null && e.getMessage().contains("UNIQUE")) {
                 System.out.println("Username already exists. Choose another one.");
@@ -67,10 +86,16 @@ public class UserDao {
             }
             return false;
         }
+
+        if (newUserId != -1) {
+            logDao.logAction(adminId, "ADMIN_ADD_USER", "Admin added user " + username + " with role " + role.toUpperCase());
+        }
+        return true;
     }
 
     public Optional<User> login(String username, String password) {
         String sql = "SELECT id, username, password, roles, status FROM users WHERE username = ? AND password = ?";
+        User loggedInUser = null;
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -79,17 +104,23 @@ public class UserDao {
             pstmt.setString(2, password);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    return Optional.of(new User(
+                    loggedInUser = new User(
                             rs.getInt("id"),
                             rs.getString("username"),
                             rs.getString("password"),
                             rs.getString("roles"),
-                            rs.getString("status")));
+                            rs.getString("status"));
                 }
             }
         } catch (SQLException e) {
             System.err.println("Login error: " + e.getMessage());
         }
+
+        if (loggedInUser != null) {
+            logDao.logAction(loggedInUser.id(), "USER_LOGIN", "User " + loggedInUser.username() + " (ID: " + loggedInUser.id() + ") logged in.");
+            return Optional.of(loggedInUser);
+        }
+
         return Optional.empty();
     }
 
@@ -135,56 +166,59 @@ public class UserDao {
         return users;
     }
 
-    public boolean approveUser(int userId) {
+    public boolean approveUser(int userId, int adminId) {
         String sql = "UPDATE users SET status = 'APPROVED' WHERE id = ?";
+        boolean updated = false;
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, userId);
-            return pstmt.executeUpdate() > 0;
+            updated = pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
             System.err.println("Error approving user: " + e.getMessage());
             return false;
         }
-    }
 
-    public boolean updateUser(int id, String username, String role, String status) {
-        String sql = "UPDATE users SET username = ?, roles = ?, status = ? WHERE id = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, username);
-            pstmt.setString(2, role.toUpperCase());
-            pstmt.setString(3, status.toUpperCase());
-            pstmt.setInt(4, id);
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.err.println("Error updating user: " + e.getMessage());
-            return false;
+        if (updated) {
+            logDao.logAction(adminId, "USER_APPROVED", "Admin ID " + adminId + " approved account for User ID " + userId);
         }
+        return updated;
     }
 
-    public boolean updateUserRoleAndStatus(int userId, String newRole, String newStatus) {
+    public boolean updateUserRoleAndStatus(int userId, String newRole, String newStatus, int adminId) {
         String sql = "UPDATE users SET roles = ?, status = ? WHERE id = ?";
+        boolean updated = false;
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, newRole.toUpperCase());
             pstmt.setString(2, newStatus.toUpperCase());
             pstmt.setInt(3, userId);
-            return pstmt.executeUpdate() > 0;
+            updated = pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
             System.err.println("Error updating user role and status: " + e.getMessage());
             return false;
         }
+
+        if (updated) {
+            logDao.logAction(adminId, "USER_UPDATED", "Admin ID " + adminId + " changed role of User ID " + userId + " to " + newRole.toUpperCase());
+        }
+        return updated;
     }
 
-    public boolean deleteUser(int id) {
+    public boolean deleteUser(int id, int adminId) {
         String sql = "DELETE FROM users WHERE id = ?";
+        boolean deleted = false;
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
-            return pstmt.executeUpdate() > 0;
+            deleted = pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
             System.err.println("Error deleting user: " + e.getMessage());
             return false;
         }
+
+        if (deleted) {
+            logDao.logAction(adminId, "USER_DELETED", "Admin ID " + adminId + " deleted User ID " + id);
+        }
+        return deleted;
     }
 }

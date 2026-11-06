@@ -1,5 +1,6 @@
 package com.scc.ui;
 
+import com.scc.dao.ActivityLogDao;
 import com.scc.dao.UserDao;
 import com.scc.model.User;
 
@@ -11,10 +12,12 @@ public class Authentication {
 
     private final Scanner sc;
     private final UserDao userDao;
+    private final ActivityLogDao logDao;
 
     public Authentication(Scanner sc, UserDao userDao) {
         this.sc = sc;
         this.userDao = userDao;
+        this.logDao = new ActivityLogDao();
     }
 
     public void start() {
@@ -86,11 +89,11 @@ public class Authentication {
             User user = result.get();
             System.out.println("Login successful! Account status: " + user.status());
 
-            // Route ADMIN to AdminMenu, others to UserMenu
             if (user.roles().equalsIgnoreCase("ADMIN")) {
                 new AdminMenu(sc, user, userDao).show();
             } else {
                 new UserMenu(sc, user, userDao).show();
+                logDao.logAction(user.id(), "USER_LOGOUT", "User " + user.username() + " (ID: " + user.id() + ") logged out.");
             }
         } else {
             System.out.println("Invalid username or password.");
