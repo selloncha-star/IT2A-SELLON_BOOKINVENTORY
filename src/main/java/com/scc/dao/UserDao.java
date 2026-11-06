@@ -94,8 +94,9 @@ public class UserDao {
     }
 
     public Optional<User> login(String username, String password) {
+        // Gikuha nato ang status kauban ang username ug password sa usa ka query
         String sql = "SELECT id, username, password, roles, status FROM users WHERE username = ? AND password = ?";
-        User loggedInUser = null;
+        User foundUser = null;
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -104,7 +105,7 @@ public class UserDao {
             pstmt.setString(2, password);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    loggedInUser = new User(
+                    foundUser = new User(
                             rs.getInt("id"),
                             rs.getString("username"),
                             rs.getString("password"),
@@ -116,9 +117,14 @@ public class UserDao {
             System.err.println("Login error: " + e.getMessage());
         }
 
-        if (loggedInUser != null) {
-            logDao.logAction(loggedInUser.id(), "USER_LOGIN", "User " + loggedInUser.username() + " (ID: " + loggedInUser.id() + ") logged in.");
-            return Optional.of(loggedInUser);
+        if (foundUser != null) {
+            if ("PENDING".equalsIgnoreCase(foundUser.status())) {
+                System.out.println("Login failed: Your account is still PENDING.");
+                return Optional.empty();
+            }
+
+            logDao.logAction(foundUser.id(), "USER_LOGIN", "User " + foundUser.username() + " (ID: " + foundUser.id() + ") logged in.");
+            return Optional.of(foundUser);
         }
 
         return Optional.empty();
@@ -147,7 +153,7 @@ public class UserDao {
 
     public List<User> getPendingUsers() {
         List<User> users = new ArrayList<>();
-        String sql = "SELECT id, username, password, roles, status FROM users WHERE status = 'PENDING'";
+        String sql = "SELECT id, username, password, roles, status FROM users WHERE UPPER(status) = 'PENDING'";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);

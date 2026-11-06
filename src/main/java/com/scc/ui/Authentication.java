@@ -4,8 +4,13 @@ import com.scc.dao.ActivityLogDao;
 import com.scc.dao.UserDao;
 import com.scc.model.User;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Optional;
 import java.util.Scanner;
+import com.scc.dao.DatabaseConnection;
 
 public class Authentication {
     private static final String[] ROLES = {"ADMIN", "LIBRARY_STAFF", "STUDENT_MEMBER", "FACULTY"};
@@ -84,6 +89,30 @@ public class Authentication {
         System.out.print("Password: ");
         String password = sc.nextLine();
 
+        // 1. Una, i-check nato kung ang account nag exist ba ug unsay status niini
+        String sql = "SELECT status FROM users WHERE username = ? AND password = ?";
+        String dbStatus = null;
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, password);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    dbStatus = rs.getString("status");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error during login check: " + e.getMessage());
+        }
+
+        // 2. Kung ang status kay PENDING, i-display ang espesyal nga mensahe ug AYAW i-print ang "Invalid username or password"
+        if (dbStatus != null && "PENDING".equalsIgnoreCase(dbStatus)) {
+            System.out.println("Login failed: Your account is still PENDING approval by the admin.");
+            return;
+        }
+
+        // 3. Kung APPROVED na o sakto ang kredensyal, padayon sa normal nga login method
         Optional<User> result = userDao.login(username, password);
         if (result.isPresent()) {
             User user = result.get();
@@ -96,6 +125,7 @@ public class Authentication {
                 logDao.logAction(user.id(), "USER_LOGOUT", "User " + user.username() + " (ID: " + user.id() + ") logged out.");
             }
         } else {
+            // Kini mo-gawas lang kung tinuod nga sayop ang username o password
             System.out.println("Invalid username or password.");
         }
     }
