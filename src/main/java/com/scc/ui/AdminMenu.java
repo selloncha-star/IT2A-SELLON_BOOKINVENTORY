@@ -335,19 +335,20 @@ public class AdminMenu {
             return;
         }
 
-        System.out.println("+-------+----------+--------------------+-------------------------------------------+---------------------+");
-        System.out.printf("| %-5s | %-8s | %-18s | %-41s | %-19s |\n", "ID", "USER ID", "ACTION TYPE", "DESCRIPTION", "TIMESTAMP");
-        System.out.println("+-------+----------+--------------------+-------------------------------------------+---------------------+");
+        // Expanded description width (`%-50s`) to prevent text overlapping and ensure a clean presentation
+        System.out.println("+-------+----------+--------------------+----------------------------------------------------+---------------------+");
+        System.out.printf("| %-5s | %-8s | %-18s | %-50s | %-19s |\n", "ID", "USER ID", "ACTION TYPE", "DESCRIPTION", "TIMESTAMP");
+        System.out.println("+-------+----------+--------------------+----------------------------------------------------+---------------------+");
 
         for (ActivityLog log : logs) {
-            System.out.printf("| %-5d | %-8d | %-18s | %-41s | %-19s |\n",
+            System.out.printf("| %-5d | %-8d | %-18s | %-50s | %-19s |\n",
                     log.id(),
                     log.userId(),
                     log.actionType(),
                     log.description(),
                     log.timestamp());
         }
-        System.out.println("+-------+----------+--------------------+-------------------------------------------+---------------------+");
+        System.out.println("+-------+----------+--------------------+----------------------------------------------------+---------------------+");
     }
 
     private int readIntInput(String prompt) {
